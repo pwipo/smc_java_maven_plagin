@@ -40,22 +40,18 @@ public class MyMojo
         extends AbstractJarMojo {
     @Parameter(defaultValue = "${project.build.outputDirectory}")
     private File classesDirectory;
-
     // @Parameter(defaultValue = "${project.basedir}")
     // private String baseDir;
-
     @Parameter(defaultValue = "${project.build.directory}")
     private File outputDirectory2;
-
     @Parameter(defaultValue = "${project.build.finalName}")
     private String packageName;
-
     @Parameter(defaultValue = "smcm")
     private String suffix;
-
     @Parameter(defaultValue = "properties.xml")
     private String propertiesFileName;
-
+    @Parameter(defaultValue = "data")
+    private String folderDataName;
     @Component
     private MavenProjectHelper projectHelper2;
 
@@ -84,10 +80,18 @@ public class MyMojo
         File f = new File(outputDirectory2, packageName + "." + suffix);
         getLog().info(f.getPath());
         try (FileOutputStream fos = new FileOutputStream(f); ZipOutputStream out = new ZipOutputStream(fos)) {
-            zipFile(out, getProject().getArtifact().getFile());
-            zipFile(out, new File(getProject().getBasedir(), propertiesFileName));
+            File dataFolder = new File(getProject().getBasedir(), folderDataName);
+            if (dataFolder.isDirectory()) {
+                File[] files = dataFolder.listFiles();
+                if (files != null && files.length > 0) {
+                    for (File file : files)
+                        zipFileOrDirectory(out, file, null);
+                }
+            }
+            zipFile(out, null, new File(getProject().getBasedir(), propertiesFileName));
+            zipFile(out, null, getProject().getArtifact().getFile());
             for (Artifact artifact : getProject().getArtifacts())
-                zipFile(out, artifact.getFile());
+                zipFile(out, null, artifact.getFile());
         } catch (Exception e) {
             throw new MojoExecutionException("zip create error", e);
         }
@@ -95,18 +99,40 @@ public class MyMojo
         // getProject().getArtifact().setFile(f);
     }
 
-    private void zipFile(ZipOutputStream out, File fileToZip) throws IOException {
+    private void zipFile(ZipOutputStream out, String fileName, File fileToZip) throws IOException {
         try (FileInputStream fis = new FileInputStream(fileToZip)) {
-            ZipEntry zipEntry = new ZipEntry(fileToZip.getName());
+            ZipEntry zipEntry = new ZipEntry(fileName != null ? fileName : fileToZip.getName());
             out.putNextEntry(zipEntry);
             byte[] bytes = new byte[1024];
             int length;
-            while ((length = fis.read(bytes)) >= 0) {
+            while ((length = fis.read(bytes)) >= 0)
                 out.write(bytes, 0, length);
-            }
         } finally {
             getLog().info(fileToZip.getPath());
             out.closeEntry();
+        }
+    }
+
+    private void zipFileOrDirectory(ZipOutputStream out, File src, String dest) throws IOException {
+        if (out == null || src == null)
+            return;
+
+        if (dest == null) {
+            dest = "";
+        } else if (!dest.endsWith("/")) {
+            dest = dest + "/";
+        }
+        if (src.isDirectory()) {
+            dest = dest + src.getName() + "/";
+            out.putNextEntry(new ZipEntry(dest));
+            out.closeEntry();
+            File[] files = src.listFiles();
+            if (files != null && files.length > 0) {
+                for (File file : files)
+                    zipFileOrDirectory(out, file, dest);
+            }
+        } else {
+            zipFile(out, dest + src.getName(), src);
         }
     }
 
